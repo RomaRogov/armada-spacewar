@@ -1,0 +1,54 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * Nothing Phone (1) as booted by its stock ABL (00872-LAHAINA-2.x) under the
+ * Gunyah hypervisor. The board itself is the in-tree spacewar DTS (with the
+ * sc7280-mainline additions from 0700-sc7280-mainline-nothing-spacewar.patch);
+ * this file only adds what the stock boot chain needs.
+ *
+ * armada: dtc-symbols
+ *   build-kernel.sh compiles this DTB with -@: Qualcomm's ufdt requires a
+ *   /__symbols__ table on the base, and the hypervisor's runtime overlay
+ *   resolves the labels below through it.
+ */
+
+#include "sm7325-nothing-spacewar.dts"
+
+/ {
+	/*
+	 * ABL picks the base DTB by SoC id (475 = SM7325 "Yupik", 515 and 499
+	 * cover the other Yupik parts) and board id; without these it finds no
+	 * match and falls back to fastboot.
+	 */
+	qcom,msm-id = <475 0x10000>, <515 0x10000>, <499 0x10000>;
+	qcom,board-id = <0 0>;
+
+	/* Labels targeted by the Gunyah overlay: &arch_timer, &wdog, &soc. */
+	arch_timer: timer {
+	};
+
+	chosen {
+		/*
+		 * Reference the overlay targets so dtc assigns them phandles;
+		 * ufdt resolves a fixup to the target's phandle and fails on 0.
+		 */
+		armada,hyp-overlay-targets = <&arch_timer &wdog &soc>;
+	};
+};
+
+&soc {
+	wdog: watchdog@17c10000 {
+	};
+};
+
+&i2c1 {
+	/*
+	 * No FSA4480 answers at 0x42 (probe NACKs, -ENODEV). The connector graph
+	 * still names it as the orientation/mode switch, so typec_register_port()
+	 * defers forever, UCSI init fails after its first commands and the
+	 * pmic_glink port never registers: no role switching, no VBUS for USB-C
+	 * accessories. A disabled remote is skipped by the graph lookup.
+	 */
+	typec-mux@42 {
+		status = "disabled";
+	};
+};

@@ -1,0 +1,96 @@
+# Android boot header v3 images for devices booted by their stock Qualcomm ABL
+# (ARMADA_BOOT_METHOD=android-v3), sourced by armada-bootimg-update and
+# post_process/make-android-v3-images.sh so build and on-device regen match.
+#
+# The layout is the one these ABLs accept from their own Android images:
+# boot (kernel + ramdisk + cmdline) and vendor_boot (the DTB), both header v3,
+# base 0, page 4096, each with an AVB hash footer. The ABL loads both from the
+# active slot, applies the dtbo partition and its hypervisor overlays to the
+# vendor_boot DTB, and appends its own androidboot.* arguments.
+
+ARMADA_V3_PARTITION_SIZE_DEFAULT=100663296
+ARMADA_V3_OS_VERSION=16.0.0
+ARMADA_V3_VENDOR_ARGS="--base 0x0 --kernel_offset 0x00008000 --ramdisk_offset 0x01000000 --tags_offset 0x00000100 --dtb_offset 0x01f00000 --pagesize 4096"
+
+# Kernel cmdline for a v3 boot.img: the BLS options (ostree= first, as for
+# /KERNEL) plus the device's extra arguments. The ABL appends its own after.
+armada_v3_cmdline() {
+    local options=$1 extra=${2:-} cmdline
+    cmdline=$(armada_bootimg_cmdline "${options}") || return 1
+    printf '%s%s' "${cmdline}" "${extra:+ ${extra}}"
+}
+
+# The slim initramfs build_files/55-generate-initramfs.sh makes for these
+# ABLs, from the deployment the BLS entry boots (the generic one in /boot is too
+# large for them to hand over). Args: deploy_root kver fallback_initramfs.
+armada_v3_initramfs() {
+    local slim="${1%/}/usr/lib/modules/$2/initramfs-android-v3.img"
+    if [ -f "${slim}" ]; then
+        printf '%s' "${slim}"
+    else
+        echo "armada_v3_initramfs: ${slim} missing; using $3 (likely too large for the ABL)" >&2
+        printf '%s' "$3"
+    fi
+}
+
+# Args: kernel(raw Image) initramfs dtb cmdline outdir [partition_size]
+# Writes outdir/boot.img and outdir/vendor_boot.img.
+armada_build_android_v3() {
+    local kernel=$1 initramfs=$2 dtb=$3 cmdline=$4 out=$5
+    local psize=${6:-${ARMADA_V3_PARTITION_SIZE_DEFAULT}}
+    local mkbootimg=${MKBOOTIMG:-/usr/libexec/armada/mkbootimg.py}
+    local avbtool=${AVBTOOL:-/usr/libexec/armada/avbtool.py}
+    local work
+
+    [ -f "${kernel}" ] && [ -f "${initramfs}" ] && [ -f "${dtb}" ] || {
+        echo "armada_build_android_v3: missing kernel, initramfs or dtb" >&2
+        return 1
+    }
+    work=$(mktemp -d) || return 1
+
+    # The ABL decompresses a gzip'd Image itself ("Decompressing kernel
+    # image"); a raw arm64 Image is ~64 MB and with the initramfs no longer fits
+    # a 96 MB boot partition, so compress it.
+    if [ "$(head -c 2 "${kernel}" | od -An -tx1 | tr -d ' ')" != 1f8b ]; then
+        gzip -9 -n -c "${kernel}" > "${work}/kernel.gz" || { rm -rf "${work}"; return 1; }
+        kernel="${work}/kernel.gz"
+    fi
+    # An empty-but-valid newc archive: the ABL concatenates vendor and boot
+    # ramdisks, and the kernel skips the bare trailer.
+    printf '' | cpio -o -H newc --quiet > "${work}/vendor_ramdisk" || { rm -rf "${work}"; return 1; }
+
+    python3 "${mkbootimg}" --header_version 3 \
+        --kernel "${kernel}" --ramdisk "${initramfs}" \
+        --os_version "${ARMADA_V3_OS_VERSION}" \
+        --os_patch_level "$(date '+%Y-%m')" \
+        --cmdline "${cmdline}" \
+        -o "${work}/boot.img" &&
+    python3 "${mkbootimg}" --header_version 3 \
+        --vendor_boot "${work}/vendor_boot.img" \
+        --vendor_ramdisk "${work}/vendor_ramdisk" \
+        --dtb "${dtb}" ${ARMADA_V3_VENDOR_ARGS} --vendor_cmdline "" &&
+    python3 "${avbtool}" add_hash_footer --image "${work}/boot.img" \
+        --partition_name boot --partition_size "${psize}" --algorithm NONE &&
+    python3 "${avbtool}" add_hash_footer --image "${work}/vendor_boot.img" \
+        --partition_name vendor_boot --partition_size "${psize}" --algorithm NONE &&
+    mkdir -p "${out}" &&
+    mv -f "${work}/boot.img" "${work}/vendor_boot.img" "${out}/" || {
+        rm -rf "${work}"
+        return 1
+    }
+    rm -rf "${work}"
+}
+
+# Active slot suffix (_a/_b) from the ABL-appended cmdline, or from bootconfig
+# where some ABLs pass androidboot.* instead (ostree-prepare-root reads both).
+armada_v3_slot() {
+    local t
+    for t in $(cat "${1:-/proc/cmdline}"); do
+        case "${t}" in androidboot.slot_suffix=_a|androidboot.slot_suffix=_b)
+            printf '%s' "${t#androidboot.slot_suffix=}"; return 0 ;;
+        esac
+    done
+    t=$(sed -n 's/^androidboot\.slot_suffix *= *"\(_[ab]\)".*/\1/p' "${2:-/proc/bootconfig}" 2>/dev/null)
+    [ -n "${t}" ] && { printf '%s' "${t}"; return 0; }
+    return 1
+}

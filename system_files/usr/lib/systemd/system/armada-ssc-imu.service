@@ -1,0 +1,14 @@
+[Unit]
+Description=Snapdragon Sensor Core accel+gyro for controller motion
+After=armada-rproc-sequential.service
+Wants=armada-rproc-sequential.service
+Before=inputplumber.service
+
+[Service]
+Type=simple
+ExecStart=/usr/libexec/armada/armada-ssc-imu
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

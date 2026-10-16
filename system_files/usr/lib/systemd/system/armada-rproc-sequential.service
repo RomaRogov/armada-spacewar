@@ -1,0 +1,13 @@
+[Unit]
+Description=Start Qualcomm remote processors one at a time
+ConditionKernelCommandLine=armada.rproc_sequential
+After=local-fs.target systemd-udev-settle.service
+Before=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/armada/armada-rproc-sequential
+
+[Install]
+WantedBy=multi-user.target

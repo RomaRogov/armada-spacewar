@@ -175,6 +175,11 @@ if ! grep -q "# armada-kernel DTBs" "${QCOM_MAKEFILE}" 2>/dev/null; then
         for dts in "${DTS_DIR}"/*.dts; do
             base=$(basename "${dts}" .dts)
             echo "dtb-\$(CONFIG_ARCH_QCOM) += ${base}.dtb"
+            # Boards booted by a stock Qualcomm ABL that applies overlays
+            # (dtbo, hypervisor) need a __symbols__ table on the base DTB.
+            if grep -q "armada: dtc-symbols" "${dts}"; then
+                echo "DTC_FLAGS_${base} += -@"
+            fi
         done
     } >> "${QCOM_MAKEFILE}"
     echo "  added $(ls ${DTS_DIR}/*.dts | wc -l) DTB entries"

@@ -115,9 +115,19 @@ export STEAM_MANGOAPP_HORIZONTAL_SUPPORTED=1
 # Scaling support
 export STEAM_GAMESCOPE_FANCY_SCALING_SUPPORT=1
 
-# Color management support
-export STEAM_GAMESCOPE_COLOR_MANAGED=1
-export STEAM_GAMESCOPE_VIRTUAL_WHITE=1
+# Panels whose driver reports no orientation (device conf).
+if [ -n "${ARMADA_GAMESCOPE_FORCE_ORIENTATION:-}" ]; then
+  ORIENTATION="$ARMADA_GAMESCOPE_FORCE_ORIENTATION"
+fi
+
+# Color management support. ARMADA_GAMESCOPE_COLOR_MANAGEMENT_DISABLE=1 (device
+# conf) turns gamescope's composite color pipeline off where it renders wrong.
+if [ "${ARMADA_GAMESCOPE_COLOR_MANAGEMENT_DISABLE:-0}" = "1" ]; then
+  export GAMESCOPE_COLOR_MANAGEMENT_DISABLE=1
+else
+  export STEAM_GAMESCOPE_COLOR_MANAGED=1
+  export STEAM_GAMESCOPE_VIRTUAL_WHITE=1
+fi
 
 # Set input method modules for Qt/GTK that will show the Steam keyboard
 export QT_IM_MODULE=steam

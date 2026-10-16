@@ -25,9 +25,16 @@ ln -sf "${splash_font}" /usr/share/armada/splash/font.ttf
 # mkbootimg must be present for on-device /KERNEL rebuilds after OTA.
 install -Dpm 0755 /ctx/build_files/vendor/mkbootimg/mkbootimg.py /usr/libexec/armada/mkbootimg.py
 install -Dpm 0755 /ctx/build_files/vendor/mkbootimg/gki/generate_gki_certificate.py /usr/libexec/armada/gki/generate_gki_certificate.py
+install -Dpm 0755 /packages/snsfeed/snsfeed /usr/libexec/armada/snsfeed
+install -Dpm 0755 /packages/snsfeed/hexagonrpcd /usr/libexec/armada/hexagonrpcd
+install -Dpm 0755 /packages/snsfeed/libhexagonrpc.so.0.5 /usr/lib64/libhexagonrpc.so.0.5
+ldconfig
+# avbtool adds the hash footers stock-ABL (android-v3) boot images carry.
+install -Dpm 0755 /ctx/build_files/vendor/avbtool/avbtool.py /usr/libexec/armada/avbtool.py
 sha256sum -c <<'EOF'
 37d84b3d162e0bc62e36c1f4e1c63c85ea0caa9f29be023eb2f8efe006ad948c  /usr/libexec/armada/mkbootimg.py
 1bb1feec68a13da18d581aa2c631798f86f6bc10b55d587b2dd31446a0f8a203  /usr/libexec/armada/gki/generate_gki_certificate.py
+e5a664a38db623da00f080219bc0ee60a640a9dc4a872803616fae4938ac749b  /usr/libexec/armada/avbtool.py
 EOF
 
 source /ctx/abl/release.env
@@ -88,6 +95,8 @@ systemctl enable inputplumber.service
 systemctl enable armada-guestos.service
 systemctl enable usr-share-guestos-android.mount
 systemctl enable armada-device-quirks.service
+systemctl enable armada-rproc-sequential.service
+systemctl enable armada-ssc-imu.service
 systemctl enable armada-rgb.service
 systemctl enable armada-rgb-brightness-watch.service
 systemctl enable armada-rgb-brightness-watch.path

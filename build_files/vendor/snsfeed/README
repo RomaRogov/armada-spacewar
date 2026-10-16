@@ -1,0 +1,9 @@
+snsfeed.c: minimal QMI-over-QRTR client for the Qualcomm Sensor Core
+"sns_client" service. It resolves the accel/gyro SUIDs, streams both, applies
+gyro bias auto-calibration at rest and feeds the sns_iio IIO bridge
+(/dev/sns_iio_feed).
+
+From ROCKNIX: https://github.com/ROCKNIX/distribution/pull/3005
+(projects/ROCKNIX/packages/sysutils/odin3-sensors/sources/snsfeed.c at
+1a6032db33a056065a373c36745872ca41e1387c), by Anze (DUCKTALE), GPL-2.0.
+Unmodified. Protocol notes credit Dylan Van Assche's libssc reverse engineering.

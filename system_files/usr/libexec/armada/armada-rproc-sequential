@@ -1,0 +1,39 @@
+#!/bin/bash
+# Start the Qualcomm PAS remoteprocs one at a time (armada.rproc_sequential).
+# On the Nothing Phone (1) all four autobooting together at boot drops the USB
+# gadget for good; started in this order after userspace is up, USB only blinks
+# while the ADSP's UCSI takes the port. qcom_q6v5_pas is blacklisted on the
+# cmdline so nothing binds before this runs.
+set -u
+
+driver=qcom_q6v5_pas
+order=(cdsp wpss mpss adsp)
+settle=${ARMADA_RPROC_SETTLE:-8}
+
+find_dev() {
+    local d
+    for d in /sys/bus/platform/devices/*.remoteproc; do
+        [ -e "${d}/of_node/compatible" ] || continue
+        tr '\0' '\n' < "${d}/of_node/compatible" | grep -q -- "-$1-pas\$" && { basename "${d}"; return 0; }
+    done
+    return 1
+}
+
+devs=()
+for name in "${order[@]}"; do
+    dev=$(find_dev "${name}") || { echo "armada-rproc-sequential: no ${name} remoteproc"; continue; }
+    devs+=("${dev}")
+    # Hold the device back from the driver until its turn.
+    echo none > "/sys/bus/platform/devices/${dev}/driver_override"
+done
+modprobe "${driver}" || exit 1
+
+for dev in "${devs[@]}"; do
+    echo "${driver}" > "/sys/bus/platform/devices/${dev}/driver_override"
+    if ! echo "${dev}" > "/sys/bus/platform/drivers/${driver}/bind" 2>/dev/null; then
+        echo "armada-rproc-sequential: binding ${dev} failed"
+        continue
+    fi
+    echo "armada-rproc-sequential: started ${dev}"
+    sleep "${settle}"
+done

@@ -13,6 +13,7 @@ run_step() {
 
 run_step ./10-base-packages.sh
 run_step ./20-install-kernel.sh
+run_step ./22-device-firmware.sh
 run_step ./30-install-steam-session.sh
 run_step ./40-vendor-system-files.sh
 run_step ./45-install-decky-plugins.sh

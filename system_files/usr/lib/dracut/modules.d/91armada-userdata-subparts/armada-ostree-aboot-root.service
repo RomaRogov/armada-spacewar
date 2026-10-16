@@ -1,0 +1,16 @@
+[Unit]
+Description=Point ostree's Android-boot root at the booted deployment
+DefaultDependencies=no
+ConditionKernelCommandLine=armada.userdata_subparts
+ConditionKernelCommandLine=ostree
+After=sysroot.mount
+Requires=sysroot.mount
+Before=ostree-prepare-root.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/armada/armada-ostree-aboot-root
+
+[Install]
+RequiredBy=ostree-prepare-root.service

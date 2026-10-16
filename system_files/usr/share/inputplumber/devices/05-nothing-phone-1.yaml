@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/ShadowBlip/InputPlumber/main/rootfs/usr/share/inputplumber/schema/composite_device_v1.json
+version: 1
+kind: CompositeDevice
+name: Nothing Phone (1)
+
+matches:
+  - udev:
+      sys_path: /sys/firmware/devicetree/base
+      attributes:
+        - name: model
+          value: Nothing Phone (1)
+
+single_source: false
+
+source_devices:
+  # A clip-on USB-C controller holds the phone, so the two move together: its
+  # buttons and the phone's motion become one virtual Deck controller.
+  - group: gamepad
+    udev:
+      properties:
+        - name: ID_INPUT_JOYSTICK
+          value: "1"
+        - name: ID_BUS
+          value: usb
+      sys_name: "event*"
+      subsystem: input
+  # Snapdragon Sensor Core accel+gyro, published as the IIO device bmi323-imu
+  # by the sns_iio bridge (fed by armada-ssc-imu).
+  - group: imu
+    iio:
+      name: bmi323-imu
+
+options:
+  auto_manage: true
+
+target_devices:
+  - deck-uhid
+  - keyboard

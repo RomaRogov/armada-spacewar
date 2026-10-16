@@ -1,0 +1,63 @@
+#!/usr/bin/python3
+"""Print a dm-linear table for a logical partition in an Android `super`.
+
+Usage: armada-lp-table <super block device> <partition name, e.g. vendor_a>
+
+Reads the liblp metadata (geometry at 4 KiB, primary metadata slots after the
+two geometry copies) and emits "start length linear <dev> <offset>" lines for
+`dmsetup create --readonly`. Read-only; never writes to the device.
+"""
+import struct
+import sys
+
+GEOMETRY_MAGIC = 0x616C4467
+HEADER_MAGIC = 0x414C5030
+RESERVED = 4096
+GEOMETRY_SIZE = 4096
+SECTOR = 512
+TARGET_LINEAR = 0
+
+
+def main():
+    dev, name = sys.argv[1], sys.argv[2]
+    slot = 1 if name.endswith("_b") else 0
+    with open(dev, "rb") as f:
+        f.seek(RESERVED)
+        geo = f.read(GEOMETRY_SIZE)
+        magic, _size = struct.unpack_from("<II", geo, 0)
+        if magic != GEOMETRY_MAGIC:
+            sys.exit(f"{dev}: no liblp geometry")
+        max_size, slot_count, _block = struct.unpack_from("<III", geo, 40)
+        if slot >= slot_count:
+            slot = 0
+        f.seek(RESERVED + 2 * GEOMETRY_SIZE + slot * max_size)
+        meta = f.read(max_size)
+
+    magic, _major, _minor, header_size = struct.unpack_from("<IHHI", meta, 0)
+    if magic != HEADER_MAGIC:
+        sys.exit(f"{dev}: no liblp metadata in slot {slot}")
+    # tables_size, tables_checksum[32], then four table descriptors
+    off = 4 + 2 + 2 + 4 + 32 + 4 + 32
+    tables = [struct.unpack_from("<III", meta, off + 12 * i) for i in range(4)]
+    (p_off, p_num, p_size), (e_off, _e_num, e_size) = tables[0], tables[1]
+    base = header_size
+
+    for i in range(p_num):
+        pe = base + p_off + i * p_size
+        pname = meta[pe:pe + 36].split(b"\0", 1)[0].decode()
+        if pname != name:
+            continue
+        _attrs, first, count, _group = struct.unpack_from("<IIII", meta, pe + 36)
+        start = 0
+        for j in range(first, first + count):
+            num, ttype, tdata, tsrc = struct.unpack_from("<QIQI", meta, base + e_off + j * e_size)
+            if ttype != TARGET_LINEAR or tsrc != 0:
+                sys.exit(f"{name}: unsupported extent (type {ttype}, source {tsrc})")
+            print(f"{start} {num} linear {dev} {tdata}")
+            start += num
+        return
+    sys.exit(f"{name}: not in {dev} metadata slot {slot}")
+
+
+if __name__ == "__main__":
+    main()

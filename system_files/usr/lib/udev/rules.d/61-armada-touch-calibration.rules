@@ -1,0 +1,7 @@
+# Nothing Phone (1): the panel driver reports no orientation, so gamescope is
+# told to rotate (ARMADA_GAMESCOPE_FORCE_ORIENTATION=right,
+# inverted landscape: upright with a USB-C clip-on controller attached) but its touch input
+# stays in panel coordinates. Rotate the touchscreen 90 degrees in libinput
+# to match.
+ACTION=="add|change", SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="fts_ts", IMPORT{program}="/usr/libexec/armada/device-env"
+ACTION=="add|change", SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="fts_ts", ENV{ARMADA_DEVICE_ID}=="nothing-phone-1", ENV{LIBINPUT_CALIBRATION_MATRIX}="0 1 0 -1 0 1"

@@ -95,6 +95,24 @@ RUN npm ci
 COPY decky/armada-store/ ./
 RUN npm run build
 
+# Snapdragon Sensor Core accel+gyro feeder (build_files/vendor/snsfeed) and
+# the FastRPC listener that serves the sensor DSP its configs (linux-msm
+# hexagonrpc, pinned commit + checksum; Fedora does not package it).
+FROM ${BASE_IMAGE} AS snsfeed-build
+ARG HEXAGONRPC_COMMIT=435ed1cd68e20f8a9fe4871233ed1f8ce7ccf9e8
+ARG HEXAGONRPC_SHA256=ad44b4e2a031f41a3982e02f957c2ba546378f145822e9034348612b9a1334db
+COPY build_files/vendor/snsfeed/snsfeed.c /src/snsfeed.c
+RUN dnf -y install gcc meson ninja-build && mkdir -p /out && \
+    gcc -O2 -Wall -o /out/snsfeed /src/snsfeed.c -lm && \
+    curl -fsSL --retry 5 -o /src/hexagonrpc.tar.gz \
+        "https://github.com/linux-msm/hexagonrpc/archive/${HEXAGONRPC_COMMIT}.tar.gz" && \
+    echo "${HEXAGONRPC_SHA256}  /src/hexagonrpc.tar.gz" | sha256sum -c - && \
+    tar -xzf /src/hexagonrpc.tar.gz -C /src && \
+    cd "/src/hexagonrpc-${HEXAGONRPC_COMMIT}" && \
+    meson setup build -Dbuildtype=release -Dprefix=/usr && ninja -C build && \
+    install -m 0755 build/hexagonrpcd/hexagonrpcd /out/hexagonrpcd && \
+    install -m 0755 build/libhexagonrpc/libhexagonrpc.so.0.5 /out/libhexagonrpc.so.0.5
+
 FROM scratch AS ctx
 COPY abl /abl/
 COPY build_files /build_files/
@@ -133,6 +151,7 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=bind,from=umtp-responder,source=/rpms,target=/packages/umtp-responder \
     --mount=type=bind,from=decky-build,source=/build/armada-control/dist,target=/packages/decky-dist \
     --mount=type=bind,from=decky-build,source=/build/armada-store/dist,target=/packages/decky-store-dist \
+    --mount=type=bind,from=snsfeed-build,source=/out,target=/packages/snsfeed \
     --mount=type=bind,from=armada-aurora,source=/rpms,target=/packages/armada-aurora \
     --mount=type=cache,dst=/var/cache \
     --mount=type=cache,dst=/var/log \

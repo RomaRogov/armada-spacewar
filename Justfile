@@ -298,6 +298,11 @@ build-armada-image $target_image=("localhost/" + image_name) $tag=default_tag: (
     fi
     ./post_process/finalize-armada-image.sh output/image/disk.raw
 
+# Fastboot images for a stock-ABL phone: ./output/<device>/{boot,vendor_boot,dtbo,userdata}.img + flash.sh
+[group('Armada')]
+build-android-v3-image device="nothing-phone-1" $target_image=("localhost/" + image_name) $tag=default_tag: (build-raw target_image tag)
+    ./post_process/make-android-v3-images.sh output/image/disk.raw {{ device }}
+
 [group('Build Virtual Machine Image')]
 rebuild-qcow2 $target_image=("localhost/" + image_name) $tag=default_tag: && (_rebuild-bib target_image tag "qcow2" "disk_config/disk.toml")
 

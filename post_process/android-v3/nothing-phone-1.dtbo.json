@@ -1,0 +1,10 @@
+{
+  "model": "Nothing Phone (1)",
+  "compatible": ["nothing,spacewar", "qcom,sm7325"],
+  "entries": [
+    { "comment": "Yupik QRD (SoC 475/515)", "msm_id": [475, 65536, 515, 65536], "board_id": [65547, 0] },
+    { "comment": "Yupik QRD + PM7250B", "msm_id": [475, 65536, 515, 65536], "board_id": [65547, 0],
+      "pmic_id": [0, 0, 0, 0, 0, 0, 0, 0, 46] },
+    { "comment": "YupikP QRD (SoC 499)", "msm_id": [499, 65536], "board_id": [65547, 0] }
+  ]
+}

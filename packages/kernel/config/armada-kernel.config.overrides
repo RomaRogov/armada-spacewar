@@ -384,3 +384,16 @@ CONFIG_CRYPTO_MD5=y
 CONFIG_CRYPTO_SHA1=y
 CONFIG_CRYPTO_SHA256=y
 CONFIG_CRYPTO_SHA512=y
+
+# ============== Nothing Phone (1) / SM7325 (spacewar) ==============
+# The stock Gunyah hypervisor resets the SoC ~16s after handoff unless its
+# watchdog is disarmed; qcom_scm registers gunyah-wdt and the driver stops it
+# at probe, so it must be built in.
+CONFIG_GUNYAH_WATCHDOG=y
+CONFIG_DRM_PANEL_VISIONOX_RM692E5=m
+# Focaltech FT3680 SPI touch (0700-sc7280-mainline-nothing-spacewar.patch)
+CONFIG_TOUCHSCREEN_FTS=m
+# NXP TFA9873 speaker amps on MI2S (same patch)
+CONFIG_SND_SOC_TFA9872=m
+# SSC accel+gyro IIO bridge fed by armada-ssc-imu (0701-iio-sns_iio-ssc-imu-bridge.patch)
+CONFIG_SNS_IIO=m

@@ -1,0 +1,90 @@
+#!/bin/bash
+# armada-bootimg-update for ARMADA_BOOT_METHOD=android-v3: rebuild the active
+# slot's boot + vendor_boot from the next-boot deployment so a bootc upgrade or
+# rollback takes effect with the stock ABL (ostree is bootloader=none).
+# Called by armada-bootimg-update with its lock held (fd 9).
+set -euo pipefail
+
+BOOTROOT="${BOOTROOT:-/boot}"
+SYSROOT="${SYSROOT:-/}"
+ARGS_FILE="${ARGS_FILE:-/usr/lib/armada/bootimg-args}"
+V3_LIB="${V3_LIB:-/usr/lib/armada/bootimg-android-v3}"
+STAMP="${STAMP:-${BOOTROOT}/.armada-bootimg-v3.id}"
+CMDLINE_FILE="${CMDLINE_FILE:-/proc/cmdline}"
+
+. "${ARGS_FILE}"
+. "${V3_LIB}"
+
+# Boot-time snapshotting is a /KERNEL.BAK concept; with A/B partitions the
+# known-good image is whatever the slot holds until we overwrite it.
+[ "${1:-}" = "--snapshot-prev" ] && exit 0
+
+if [ -z "${ARMADA_BOOT_DTB:-}" ]; then
+    eval "$(/usr/libexec/armada/device-env)"
+fi
+[ -n "${ARMADA_BOOT_DTB:-}" ] || { echo "armada-bootimg-update-android-v3: device has no ARMADA_BOOT_DTB" >&2; exit 1; }
+
+entry=$(armada_default_bls_entry "${BOOTROOT}")
+[ -n "${entry:-}" ] || { echo "armada-bootimg-update-android-v3: no BLS entry in ${BOOTROOT}/loader/entries" >&2; exit 1; }
+linux=$(sed -n 's/^linux //p'   "${entry}" | head -1)
+initrd=$(sed -n 's/^initrd //p' "${entry}" | head -1)
+fdtdir=$(sed -n 's/^fdtdir //p' "${entry}" | head -1)
+options=$(sed -n 's/^options //p' "${entry}" | head -1)
+
+kpath="${BOOTROOT}${linux#/boot}"
+ostree_karg=""
+for t in ${options}; do case "${t}" in ostree=*) ostree_karg="${t#ostree=}" ;; esac; done
+deploy_root=$(realpath -e "${SYSROOT%/}${ostree_karg}") || { echo "armada-bootimg-update-android-v3: ${ostree_karg} does not resolve" >&2; exit 1; }
+ipath=$(armada_v3_initramfs "${deploy_root}" "${linux##*/vmlinuz-}" "${BOOTROOT}${initrd#/boot}")
+if [ -n "${fdtdir}" ]; then
+    dtb="${BOOTROOT}${fdtdir#/boot}/qcom/${ARMADA_BOOT_DTB}.dtb"
+else
+    # No fdtdir in the entry: take the DTB from the deployment being booted.
+    dtb=$(ls "${deploy_root}"/usr/lib/modules/*/dtb/qcom/"${ARMADA_BOOT_DTB}.dtb" 2>/dev/null | head -1)
+fi
+[ -f "${dtb:-}" ] || { echo "armada-bootimg-update-android-v3: missing DTB ${dtb:-${ARMADA_BOOT_DTB}}" >&2; exit 1; }
+
+cmdline=$(armada_v3_cmdline "${options}" "${ARMADA_BOOT_EXTRA_CMDLINE:-}") || {
+    echo "armada-bootimg-update-android-v3: no ostree= karg in ${entry}; refusing to write an unbootable boot image" >&2
+    exit 1
+}
+
+slot=$(armada_v3_slot "${CMDLINE_FILE}") || { echo "armada-bootimg-update-android-v3: no androidboot.slot_suffix on the cmdline or in bootconfig" >&2; exit 1; }
+boot_part=$(realpath -e "/dev/disk/by-partlabel/boot${slot}")
+vendor_part=$(realpath -e "/dev/disk/by-partlabel/vendor_boot${slot}")
+
+id=$( { printf '%s\n' "${cmdline}" "${ARMADA_BOOT_DTB}" "${slot}"; sha256sum "${kpath}" "${ipath}" "${dtb}" "${V3_LIB}" | awk '{print $1}'; } | sha256sum | cut -d' ' -f1)
+if [ "$(cat "${STAMP}" 2>/dev/null || true)" = "${id}" ]; then
+    echo "armada-bootimg-update-android-v3: boot${slot} already current (${linux##*/})"
+    exit 0
+fi
+
+work=$(mktemp -d)
+trap 'rm -rf "${work}"' EXIT
+armada_build_android_v3 "${kpath}" "${ipath}" "${dtb}" "${cmdline}" "${work}" \
+    "$(blockdev --getsize64 "${boot_part}")"
+
+# The footer pads boot.img to its partition size; vendor_boot shares it here,
+# but size its footer for its own partition if they ever differ.
+if [ "$(blockdev --getsize64 "${vendor_part}")" != "$(stat -c %s "${work}/vendor_boot.img")" ]; then
+    echo "armada-bootimg-update-android-v3: vendor_boot${slot} size differs from boot${slot}; refusing" >&2
+    exit 1
+fi
+
+# vendor_boot first: an old boot.img with a new DTB still boots the old kernel
+# with a compatible tree; the reverse order risks a new kernel on an old DTB.
+write_part() {
+    local img=$1 part=$2
+    dd if="${img}" of="${part}" bs=4M conv=fsync status=none
+    cmp -n "$(stat -c %s "${img}")" "${img}" "${part}" || {
+        echo "armada-bootimg-update-android-v3: readback of ${part} does not match" >&2
+        return 1
+    }
+}
+rm -f "${STAMP}"
+write_part "${work}/vendor_boot.img" "${vendor_part}"
+write_part "${work}/boot.img" "${boot_part}"
+printf '%s' "${id}" > "${STAMP}"
+sync
+
+echo "armada-bootimg-update-android-v3: wrote boot${slot}/vendor_boot${slot} for ${linux##*/}"

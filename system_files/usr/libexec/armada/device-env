@@ -37,6 +37,7 @@ case "$model" in
     "Retroid Pocket 6") profile=retroid-pocket-6 ;;
     "Retroid Pocket 6 TOP-DPAD") profile=retroid-pocket-6 ;;
     "Retroid Pocket Nova") profile=retroid-pocket-nova ;;
+    "Nothing Phone (1)") profile=nothing-phone-1 ;;
     *) profile= ;;
 esac
 
@@ -65,7 +66,8 @@ fi
 
 # Proton defaults are tried in order and must match Steam compatibility
 # tool IDs.
-if [[ "${ARMADA_SOC_CLASS:-}" == SM8250 ]]; then
+# Adreno 6xx classes (SM8250, SM7325) share the conservative default.
+if [[ "${ARMADA_SOC_CLASS:-}" == SM8250 || "${ARMADA_SOC_CLASS:-}" == SM7325 ]]; then
     ARMADA_PROTON_DEFAULTS=proton-cachyos-11.0-arm64
 else
     ARMADA_PROTON_DEFAULTS=proton_11-arm64:proton-experimental-arm64:proton-cachyos-11.0-arm64
@@ -82,6 +84,13 @@ case "${ARMADA_SOC_CLASS:-}" in
         : "${ARMADA_PRIME_CORES=7}"
         # references run SM8250 unrestricted; the A55s are too weak to
         # carry all IRQ handling
+        : "${ARMADA_IRQ_CORES=}"
+        ;;
+    SM7325)
+        # 4x A55 + 3x A78 + 1x A78 prime; like SM8250, keep IRQs unrestricted.
+        : "${ARMADA_LITTLE_CORES=0-3}"
+        : "${ARMADA_BIG_CORES=4-7}"
+        : "${ARMADA_PRIME_CORES=7}"
         : "${ARMADA_IRQ_CORES=}"
         ;;
     SM8550)
@@ -121,6 +130,8 @@ vars=(
     ARMADA_PANEL_TYPE
     ARMADA_PANEL_ORIENTATION
     ARMADA_GAMESCOPE_USE_ROTATION_SHADER
+    ARMADA_GAMESCOPE_COLOR_MANAGEMENT_DISABLE
+    ARMADA_GAMESCOPE_FORCE_ORIENTATION
     ARMADA_GAMESCOPE_FAKE_OUTPUT_MM
     ARMADA_HDR_NITS
     ARMADA_GAMEPAD_QUIRK
@@ -129,6 +140,10 @@ vars=(
     ARMADA_BIG_CORES
     ARMADA_PRIME_CORES
     ARMADA_IRQ_CORES
+    ARMADA_BOOT_METHOD
+    ARMADA_BOOT_DTB
+    ARMADA_BOOT_EXTRA_CMDLINE
+    ARMADA_SSC_IMU
 )
 
 for var in "${vars[@]}"; do

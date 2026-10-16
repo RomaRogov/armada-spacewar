@@ -1,0 +1,85 @@
+#!/bin/bash
+# Snapdragon Sensor Core accel+gyro for phones whose IMU sits behind the ADSP
+# (ARMADA_SSC_IMU=1): stage the sensor tree the DSP reads, serve it with
+# hexagonrpcd (sensors PD) and feed accel+gyro into the sns_iio IIO bridge, which
+# InputPlumber exposes as controller motion.
+#
+# The DSP only brings its sensors up with the device's own vendor sensor
+# configs plus the calibrated registry Android wrote to persist; with any other
+# config set it tries to regenerate the registry. Both are read from the
+# phone's untouched partitions (read-only) into tmpfs, so nothing proprietary
+# ships in the image.
+set -euo pipefail
+
+HEXFS=/run/armada/hexagonfs
+WORK=/run/armada/ssc-mnt
+
+eval "$(/usr/libexec/armada/device-env)"
+[ "${ARMADA_SSC_IMU:-0}" = 1 ] || { echo "armada-ssc-imu: not an SSC IMU device"; exit 0; }
+
+# The sensor PD lives on the ADSP, which armada-rproc-sequential starts last.
+for _ in $(seq 1 120); do
+    for r in /sys/class/remoteproc/*; do
+        [ "$(cat "${r}/name" 2>/dev/null)" = adsp ] && [ "$(cat "${r}/state")" = running ] && break 2
+    done
+    sleep 1
+done
+[ -e /dev/fastrpc-adsp ] || { echo "armada-ssc-imu: ADSP FastRPC not available" >&2; exit 1; }
+
+cleanup_mounts() {
+    umount "${WORK}/vendor" 2>/dev/null || true
+    umount "${WORK}/persist" 2>/dev/null || true
+    dmsetup remove armada-ssc-vendor 2>/dev/null || true
+}
+trap cleanup_mounts EXIT
+
+if [ ! -e "${HEXFS}/.staged" ]; then
+    # hexagonrpcd's -R layout: sensors/{config,sns_reg.conf,registry}, dsp/,
+    # socinfo/ (see linux-msm/hexagonrpc rpcd_builder.c).
+    rm -rf "${HEXFS}"
+    mkdir -p "${HEXFS}/sensors" "${WORK}/vendor" "${WORK}/persist"
+    # shellcheck source=/dev/null
+    source /usr/lib/armada/bootimg-android-v3
+    slot=$(armada_v3_slot) || slot=_a
+
+    # Nothing's sensor configs from the vendor image in the Android super.
+    modprobe dm-mod 2>/dev/null || true
+    modprobe erofs 2>/dev/null || true
+    /usr/libexec/armada/armada-lp-table /dev/disk/by-partlabel/super "vendor${slot}" \
+        | dmsetup create --readonly armada-ssc-vendor
+    mount -o ro /dev/mapper/armada-ssc-vendor "${WORK}/vendor"
+    cp -a "${WORK}/vendor/etc/sensors/config" "${HEXFS}/sensors/config"
+    cp "${WORK}/vendor/etc/sensors/sns_reg_config" "${HEXFS}/sensors/sns_reg.conf"
+
+    # The registry Android generated (and calibrated) from those configs.
+    mount -o ro,noload /dev/disk/by-partlabel/persist "${WORK}/persist"
+    if [ -d "${WORK}/persist/sensors/registry/registry" ]; then
+        cp -a "${WORK}/persist/sensors/registry/registry" "${HEXFS}/sensors/registry"
+    else
+        mkdir -p "${HEXFS}/sensors/registry"
+    fi
+    cleanup_mounts
+
+    # DSP-side sensor libraries and socinfo from the device firmware.
+    fw=/usr/share/qcom/sm7325/nothing/spacewar
+    ln -sfn "${fw}/dsp" "${HEXFS}/dsp"
+    ln -sfn "${fw}/socinfo" "${HEXFS}/socinfo"
+    touch "${HEXFS}/.staged"
+fi
+
+modprobe sns_iio
+
+/usr/libexec/armada/hexagonrpcd -f /dev/fastrpc-adsp -d adsp -R "${HEXFS}" -s &
+listener=$!
+trap 'kill "${listener}" 2>/dev/null; cleanup_mounts' EXIT
+
+# The sensor service (QRTR 400) appears once the DSP has loaded the registry.
+# Retry snsfeed against the one listener: restarting it mid-init leaves the
+# DSP's FastRPC session busy.
+for ((t = 0; t < 120; t += 5)); do
+    kill -0 "${listener}" 2>/dev/null || { echo "armada-ssc-imu: hexagonrpcd exited" >&2; exit 1; }
+    sleep 5
+    /usr/libexec/armada/snsfeed "${ARMADA_SSC_IMU_RATE:-100}" && exit 0
+done
+echo "armada-ssc-imu: sensor service never appeared" >&2
+exit 1

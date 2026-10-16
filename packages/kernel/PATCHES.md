@@ -823,3 +823,15 @@ no equivalent submission was found, or a permanent URL to the upstream submissio
 - `patches/0505a-arm64-unaligned-atomics-cover-the-load128-store-exclusive.patch`
   source: armada
   upstream: local
+
+- `patches/0700-sc7280-mainline-nothing-spacewar.patch`
+  source: https://github.com/sc7280-mainline/linux/tree/v7.2.9-sc7280
+  upstream: no
+  notes: modified. It is the Nothing Phone (1) subset of the sc7280-mainline fork, diffed against Linux 7.2.9 and regenerated against 7.2.6 plus this series: the spacewar DTS and kodiak.dtsi updates, Focaltech FTS SPI touch (both focaltech_touch trees), the NXP TFA9872/9873 codec, the sm7325 sound card and q6afe/q6core/q6routing/q6voice changes, the qcom_q6v5 handover-IRQ fix, the dispcc-sc7280 MDP no-park clk ops, and the soc-core card long_name for UCM. Other phones' panels and cameras from the fork are left out.
+- `dts/sm7325-nothing-spacewar-armada.dts`
+  source: armada
+  notes: Stock ABL and Gunyah boot requirements on top of the in-tree spacewar DTS: qcom,msm-id/board-id for ABL DTB selection, the arch_timer and wdog labels the hypervisor overlay targets, a -@ build ("armada: dtc-symbols") so Qualcomm ufdt finds /__symbols__, and the absent FSA4480 SBU mux disabled so the pmic_glink UCSI port registers (USB-C role switching and accessory power).
+- `patches/0701-iio-sns_iio-ssc-imu-bridge.patch`
+  source: https://github.com/ROCKNIX/distribution/pull/3005 (0514-ROCKNIX-iio-sns-iio-ssc-imu-bridge.patch, Anze)
+  upstream: no
+  notes: modified. Rebased onto 7.2.6 (Kconfig context) and the help text generalised. It is a userspace-fed IIO device named bmi323-imu, which InputPlumber's iio_imu driver binds to; armada-ssc-imu feeds it on Snapdragon Sensor Core phones (Nothing Phone (1)).

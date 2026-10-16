@@ -33,6 +33,15 @@ flock -w 30 9 || {
     exit 1
 }
 
+# Stock-ABL devices boot Android v3 images from their A/B boot partitions, not
+# /KERNEL; the lock above is inherited by the exec'd handler.
+if [ -z "${ARMADA_BOOT_METHOD+x}" ]; then
+    ARMADA_BOOT_METHOD=$( { /usr/libexec/armada/device-env 2>/dev/null || true; } | sed -n 's/^ARMADA_BOOT_METHOD=//p')
+fi
+if [ "${ARMADA_BOOT_METHOD}" = android-v3 ]; then
+    exec /usr/libexec/armada/armada-bootimg-update-android-v3 "$@"
+fi
+
 # /KERNEL must land on the FAT ESP the ABL reads; if it isn't mounted we'd write
 # to a stray dir and the ABL would keep booting the old kernel. Fail loud instead.
 findmnt -rn "${ESP}" >/dev/null 2>&1 || {

@@ -1,0 +1,15 @@
+[Unit]
+Description=Map the Armada partitions inside Android userdata
+DefaultDependencies=no
+ConditionKernelCommandLine=armada.userdata_subparts
+After=systemd-udev-trigger.service
+Before=initrd-root-device.target sysroot.mount
+Wants=systemd-udev-trigger.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/armada/armada-userdata-subparts
+
+[Install]
+WantedBy=initrd-root-device.target
